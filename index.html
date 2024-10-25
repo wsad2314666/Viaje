@@ -159,9 +159,11 @@
         }
         function updateMapMarkers() {
             // 清除地圖上的現有標記
-            markers.forEach(marker => marker.setMap(null));
-            markers = [];
-
+            if (window.markers) {
+                window.markers.forEach(marker => marker.setMap(null));
+            }
+            window.markers = [];
+        
             const locationInputs = document.querySelectorAll(".location");
             locationInputs.forEach(input => {
                 const place = input.value;
@@ -169,17 +171,66 @@
                     const geocoder = new google.maps.Geocoder();
                     geocoder.geocode({ 'address': place }, (results, status) => {
                         if (status === 'OK') {
+                            const location = results[0].geometry.location;
                             const marker = new google.maps.Marker({
-                                position: results[0].geometry.location,
+                                position: location,
                                 map: map
                             });
-                            markers.push(marker);
-                            map.setCenter(results[0].geometry.location);
+        
+                            // 使用 PlaceService 來取得詳細資訊
+                            const service = new google.maps.places.PlacesService(map);
+                            service.findPlaceFromQuery({
+                                query: place,
+                                fields: ['place_id']
+                            }, (placeResults, status) => {
+                                if (status === google.maps.places.PlacesServiceStatus.OK && placeResults.length > 0) {
+                                    const placeId = placeResults[0].place_id;
+        
+                                    // 使用 Place Details 取得詳細資訊
+                                    service.getDetails({
+                                        placeId: placeId,
+                                        fields: ['name', 'formatted_address', 'formatted_phone_number', 'opening_hours', 'photos']
+                                    }, (details, status) => {
+                                        if (status === google.maps.places.PlacesServiceStatus.OK) {
+                                            let contentString = `<h3>${details.name}</h3>`;
+                                            contentString += `<p>${details.formatted_address}</p>`;
+                                            if (details.formatted_phone_number) {
+                                                contentString += `<p>Phone: ${details.formatted_phone_number}</p>`;
+                                            }
+                                            if (details.opening_hours) {
+                                                const hours = details.opening_hours.weekday_text;
+                                                contentString += `<p>Business Hours:</p><ul>`;
+                                                hours.forEach(hour => {
+                                                    contentString += `<li>${hour}</li>`;
+                                                });
+                                                contentString += `</ul>`;
+                                            }
+                                            if (details.photos && details.photos.length > 0) {
+                                                const photoUrl = details.photos[0].getUrl();
+                                                contentString += `<img src="${photoUrl}" style="width: 100%; height: auto; margin-top: 10px;">`;
+                                            }
+        
+                                            // 建立 InfoWindow
+                                            const infowindow = new google.maps.InfoWindow({
+                                                content: contentString
+                                            });
+        
+                                            // 點擊標記時顯示 InfoWindow
+                                            marker.addListener('click', () => {
+                                                infowindow.open(map, marker);
+                                            });
+                                        }
+                                    });
+                                }
+                            });
+        
+                            window.markers.push(marker);
+                            map.setCenter(location);
                         }
                     });
                 }
             });
-
+        
             // 自動畫出兩個或以上地點的路線
             if (locationInputs.length > 1) {
                 planRoute();
