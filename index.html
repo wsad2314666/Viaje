@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>旅遊規劃行程</title>
+    <style>
+        body {
+            display: flex;
+        }
+        #map {
+            flex: 1;
+            height: 100vh;
+        }
+        #controls {
+            min-width: 350px;
+            max-width: 600px;
+            width: auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+            overflow-y: auto;
+            resize: horizontal;
+        }
+        .location-input {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .location-input img {
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+        }
+        .day-trip {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }
+        .day-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .day-title input {
+            font-size: 16px;
+            width: 70%;
+            padding: 5px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        #summary {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+        }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBlajbPhDYoKEiz0lkhXRjFdj-IIS2eNRs&libraries=places"></script>
+</head>
+<body>
+    <div id="controls">
+        <h3>旅遊規劃行程</h3>
+        <div id="days">
+            <div id="locations">
+                <!-- <div class="location-input">
+                    <input class="location" type="text" placeholder="Enter Location 1">
+                    <select class="mode">
+                        <option value="DRIVING">開車</option>
+                        <option value="WALKING">步行</option>
+                        <option value="BICYCLING">腳踏車</option>
+                        <option value="TRANSIT">大眾交通</option>
+                    </select>
+                    <button onclick="deleteLocation(this)">Delete</button>
+                </div> -->
+            </div>
+        </div>
+        <button onclick="addDay()">Add Day</button>
+        <button onclick="deleteDay()">Delete Day</button>
+        <button onclick="addLocation()">Add Location</button>
+        <!-- <button onclick="planRoute()">Plan Route</button> -->
+        <div id="summary"></div>
+    </div>
+    <div id="map"></div>
+    <script>
+        let map;
+        let directionsService;
+        let directionsRenderer;
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: -33.8688, lng: 151.2093 },
+                zoom: 8
+            });
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+
+            // Initialize the first location with autocomplete
+            initAutocomplete(document.querySelector(".location"));
+        }
+        function addDay() {
+            const daysDiv = document.getElementById("days");
+            const dayNumber = daysDiv.children.length + 1;
+            const newDay = document.createElement("div");
+            newDay.className = "day-trip";
+            newDay.innerHTML = `
+                <div class="day-title">
+                    <input type="text" placeholder="Day ${dayNumber}: Enter trip name">
+                    <input type="checkbox" class="day-checkbox" onchange="planRoute()">
+                    <button onclick="addLocation(this)">Add Location</button>
+                </div>
+                <div class="locations"></div>
+            `;
+            daysDiv.appendChild(newDay);
+        }
+        function deleteDay() {
+            const daysDiv = document.getElementById("days");
+            if (daysDiv.children.length > 0) {
+                daysDiv.removeChild(daysDiv.lastElementChild);
+            }
+        }
+        function addLocation(button) {
+            const locationsDiv = button.parentElement.parentElement.querySelector(".locations");
+            const newLocation = document.createElement("div");
+            newLocation.className = "location-input";
+            newLocation.innerHTML = `
+                <input class="location" type="text" placeholder="Enter Location ${locationsDiv.children.length + 1}">
+                <select class="mode">
+                    <option value="DRIVING">開車</option>
+                    <option value="WALKING">步行</option>
+                    <option value="BICYCLING">腳踏車</option>
+                    <option value="TRANSIT">大眾交通</option>
+                </select>
+                <button onclick="deleteLocation(this)">Delete</button>
+            `;
+            locationsDiv.appendChild(newLocation);
+
+            // Initialize autocomplete for the new location input
+            initAutocomplete(newLocation.querySelector(".location"));
+        }
+
+        function deleteLocation(button) {
+            const locationDiv = button.parentElement;
+            locationDiv.remove();
+            updateLocationPlaceholders();
+            updateMapMarkers(); // 更新地圖
+        }
+        function updateLocationPlaceholders() {
+            const locationInputs = document.querySelectorAll(".location");
+            locationInputs.forEach((input, index) => {
+                input.placeholder = `Enter Location ${index + 1}`;
+            });
+        }
+        function initAutocomplete(input) {
+            const autocomplete = new google.maps.places.Autocomplete(input);
+            autocomplete.addListener('place_changed', function () {
+                updateMapMarkers();
+            });
+        }
+        function updateMapMarkers() {
+            // 清除地圖上的現有標記
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+
+            const locationInputs = document.querySelectorAll(".location");
+            locationInputs.forEach(input => {
+                const place = input.value;
+                if (place) {
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ 'address': place }, (results, status) => {
+                        if (status === 'OK') {
+                            const marker = new google.maps.Marker({
+                                position: results[0].geometry.location,
+                                map: map
+                            });
+                            markers.push(marker);
+                            map.setCenter(results[0].geometry.location);
+                        }
+                    });
+                }
+            });
+
+            // 自動畫出兩個或以上地點的路線
+            if (locationInputs.length > 1) {
+                planRoute();
+            }
+        }
+        function planRoute() {
+            const dayTrips = document.querySelectorAll(".day-trip");
+
+            // 清除所有的路線
+            clearAllRoutes();
+
+            let totalDurationAllDays = 0;
+            let totalDistanceAllDays = 0;
+
+            // 清空 Trip Summary，確保只顯示勾選的天數資訊
+            const summaryDiv = document.getElementById("summary");
+            summaryDiv.innerHTML = "";
+
+            // 確認是否有任何天數被勾選
+            let anyDayChecked = false;
+            let selectedDayTitles = []; // 用來儲存被選中的天數名稱
+
+            // 定義顏色數組
+            const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
+
+            // 使用 Promise 來處理每一天的計算
+            const dayPromises = Array.from(dayTrips).map((day, index) => {
+                return new Promise((resolve) => {
+                    const dayTitle = day.querySelector(".day-title input").value || `Day ${index + 1}`;
+                    const isChecked = day.querySelector(".day-checkbox").checked;
+
+                    if (isChecked) { // 只規劃勾選的天數
+                        anyDayChecked = true;
+                        selectedDayTitles.push(dayTitle); // 儲存被選中的天數名稱
+
+                        const locations = day.querySelectorAll(".location");
+                        const modes = day.querySelectorAll(".mode");
+
+                        if (locations.length < 2) {
+                            resolve(); // 沒有足夠地點時，不進行計算
+                            return;
+                        }
+
+                        summaryDiv.innerHTML += `<h3>${dayTitle} Trip Summary</h3><ul>`;
+                        let totalDuration = 0;
+                        let totalDistance = 0;
+
+                        let waypoints = [];
+                        for (let i = 1; i < locations.length - 1; i++) {
+                            waypoints.push({
+                                location: locations[i].value,
+                                stopover: true
+                            });
+                        }
+
+                        const origin = locations[0].value;
+                        const destination = locations[locations.length - 1].value;
+                        const travelMode = google.maps.TravelMode[modes[0].value];
+
+                        const request = {
+                            origin: origin,
+                            destination: destination,
+                            waypoints: waypoints,
+                            travelMode: travelMode,
+                            optimizeWaypoints: true,
+                        };
+
+                        const directionsRenderer = new google.maps.DirectionsRenderer({
+                            polylineOptions: {
+                                strokeColor: colors[index % colors.length] // 使用顏色數組中的顏色
+                            }
+                        });
+
+                        // 將 renderer 存到全域變數，以便在勾選狀態改變時可以清除
+                        if (!window.directionsRenderers) {
+                            window.directionsRenderers = [];
+                        }
+                        window.directionsRenderers.push(directionsRenderer);
+
+                        directionsRenderer.setMap(map);
+
+                        directionsService.route(request, (result, status) => {
+                            if (status === google.maps.DirectionsStatus.OK) {
+                                directionsRenderer.setDirections(result);
+
+                                const route = result.routes[0];
+                                for (let i = 0; i < route.legs.length; i++) {
+                                    const leg = route.legs[i];
+                                    totalDuration += leg.duration.value;
+                                    totalDistance += leg.distance.value;
+                                    summaryDiv.innerHTML += `<li>From ${leg.start_address} to ${leg.end_address} (${modes[i].value}): ${leg.duration.text}, ${leg.distance.text}</li>`;
+                                }
+
+                                summaryDiv.innerHTML += `<p>Total Duration: ${(totalDuration / 60).toFixed(2)} minutes, Total Distance: ${(totalDistance / 1000).toFixed(2)} km</p>`;
+
+                                // 累計到所有天數的總時間和總距離
+                                totalDurationAllDays += totalDuration;
+                                totalDistanceAllDays += totalDistance;
+
+                                // 將當前天數的計算完成，返回結果
+                                resolve();
+                            } else {
+                                alert("Could not find route: " + status);
+                                resolve();
+                            }
+                        });
+                    } else {
+                        resolve(); // 如果未選擇，直接跳過
+                    }
+                });
+            });
+
+            // 當所有天數都完成計算後，如果有勾選的天數顯示總計時間和距離
+            Promise.all(dayPromises).then(() => {
+                if (anyDayChecked) {
+                    const combinedDayTitle = selectedDayTitles.length > 1 
+                        ? selectedDayTitles.join("、") 
+                        : selectedDayTitles[0]; // 如果只有一個，直接顯示
+
+                    summaryDiv.innerHTML += `<p><strong>${combinedDayTitle} Combined:</strong> Total Duration: ${(totalDurationAllDays / 60).toFixed(2)} minutes, Total Distance: ${(totalDistanceAllDays / 1000).toFixed(2)} km</p>`;
+                } else {
+                    summaryDiv.innerHTML = ""; // 如果沒有任何天數被勾選，清除 Trip Summary
+                }
+            });
+        }
+
+        // 清除所有的路線繪製
+        function clearAllRoutes() {
+            if (window.directionsRenderers) {
+                window.directionsRenderers.forEach(renderer => {
+                    renderer.setMap(null); // 從地圖中移除
+                });
+            }
+            window.directionsRenderers = [];
+        }
+        window.onload = initMap;
+    </script>
+</body>
+</html>
