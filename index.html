@@ -158,14 +158,15 @@
             });
         }
         function updateMapMarkers() {
-            // 清除地圖上的現有標記
             if (window.markers) {
                 window.markers.forEach(marker => marker.setMap(null));
             }
             window.markers = [];
         
             const locationInputs = document.querySelectorAll(".location");
-            locationInputs.forEach(input => {
+            const dayCheckboxes = document.querySelectorAll(".day-checkbox");
+        
+            locationInputs.forEach((input, index) => {
                 const place = input.value;
                 if (place) {
                     const geocoder = new google.maps.Geocoder();
@@ -177,7 +178,6 @@
                                 map: map
                             });
         
-                            // 使用 PlaceService 來取得詳細資訊
                             const service = new google.maps.places.PlacesService(map);
                             service.findPlaceFromQuery({
                                 query: place,
@@ -189,35 +189,28 @@
                                     // 使用 Place Details 取得詳細資訊
                                     service.getDetails({
                                         placeId: placeId,
-                                        fields: ['name', 'formatted_address', 'formatted_phone_number', 'opening_hours', 'photos']
+                                        fields: ['name', 'formatted_address', 'opening_hours']
                                     }, (details, status) => {
                                         if (status === google.maps.places.PlacesServiceStatus.OK) {
-                                            let contentString = `<h3>${details.name}</h3>`;
-                                            contentString += `<p>${details.formatted_address}</p>`;
-                                            if (details.formatted_phone_number) {
-                                                contentString += `<p>Phone: ${details.formatted_phone_number}</p>`;
-                                            }
+                                            let contentString = `<p>${details.formatted_address}</p>`;
+        
                                             if (details.opening_hours) {
-                                                const hours = details.opening_hours.weekday_text;
-                                                contentString += `<p>Business Hours:</p><ul>`;
-                                                hours.forEach(hour => {
-                                                    contentString += `<li>${hour}</li>`;
-                                                });
-                                                contentString += `</ul>`;
-                                            }
-                                            if (details.photos && details.photos.length > 0) {
-                                                const photoUrl = details.photos[0].getUrl();
-                                                contentString += `<img src="${photoUrl}" style="width: 100%; height: auto; margin-top: 10px;">`;
+                                                const hours = details.opening_hours.weekday_text.join(", ");
+                                                contentString += `<p>營業時間: ${hours}</p>`;
+                                            } else {
+                                                contentString += `<p>營業時間: 無</p>`;
                                             }
         
-                                            // 建立 InfoWindow
                                             const infowindow = new google.maps.InfoWindow({
                                                 content: contentString
                                             });
         
-                                            // 點擊標記時顯示 InfoWindow
                                             marker.addListener('click', () => {
-                                                infowindow.open(map, marker);
+                                                // 檢查該天是否被勾選
+                                                const isDayChecked = dayCheckboxes[index] && dayCheckboxes[index].checked;
+                                                if (isDayChecked) {
+                                                    infowindow.open(map, marker);
+                                                }
                                             });
                                         }
                                     });
@@ -366,7 +359,57 @@
             }
             window.directionsRenderers = [];
         }
-        window.onload = initMap;
+        function saveTripToLocalStorage() {
+            const days = document.querySelectorAll(".day-trip");
+            const tripData = Array.from(days).map(day => {
+                const title = day.querySelector(".day-title input").value;
+                const locations = Array.from(day.querySelectorAll(".location")).map(location => location.value);
+                return { title, locations };
+            });
+            localStorage.setItem("savedTrip", JSON.stringify(tripData));
+        }
+        
+        // 每次修改時觸發快取儲存
+        document.querySelectorAll(".location, .day-checkbox").forEach(input => {
+            input.addEventListener("change", saveTripToLocalStorage);
+        });
+        window.onload = () => {
+            initMap();
+            loadTripFromLocalStorage();
+        };
+        function loadTripFromLocalStorage() {
+            const savedTrip = localStorage.getItem("savedTrip");
+            if (savedTrip) {
+                const tripData = JSON.parse(savedTrip);
+                const daysDiv = document.getElementById("days");
+                tripData.forEach((day, index) => {
+                    const newDay = document.createElement("div");
+                    newDay.className = "day-trip";
+                    newDay.innerHTML = `
+                        <div class="day-title">
+                            <input type="text" value="${day.title}">
+                            <input type="checkbox" class="day-checkbox" onchange="planRoute()">
+                            <button onclick="addLocation(this)">Add Location</button>
+                        </div>
+                        <div class="locations">
+                            ${day.locations.map((loc, idx) => `
+                                <div class="location-input">
+                                    <input class="location" type="text" value="${loc}" placeholder="Enter Location ${idx + 1}">
+                                    <select class="mode">
+                                        <option value="DRIVING">開車</option>
+                                        <option value="WALKING">步行</option>
+                                        <option value="BICYCLING">腳踏車</option>
+                                        <option value="TRANSIT">大眾交通</option>
+                                    </select>
+                                    <button onclick="deleteLocation(this)">Delete</button>
+                                </div>
+                            `).join("")}
+                        </div>
+                    `;
+                    daysDiv.appendChild(newDay);
+                });
+            }
+        }
     </script>
 </body>
 </html>
