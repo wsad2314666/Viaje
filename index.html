@@ -112,11 +112,18 @@
                 <div class="locations"></div>
             `;
             daysDiv.appendChild(newDay);
+
+            // 儲存當前行程
+            saveTripToLocalStorage();
+            // 重新附加事件監聽器
+            attachSaveListeners();
         }
         function deleteDay() {
             const daysDiv = document.getElementById("days");
             if (daysDiv.children.length > 0) {
                 daysDiv.removeChild(daysDiv.lastElementChild);
+                // 儲存當前行程
+                saveTripToLocalStorage();
             }
         }
         function addLocation(button) {
@@ -368,7 +375,16 @@
             });
             localStorage.setItem("savedTrip", JSON.stringify(tripData));
         }
-        
+
+        // 添加事件監聽器，確保每次更改行程都能儲存
+        function attachSaveListeners() {
+            document.querySelectorAll(".location, .day-title input").forEach(input => {
+                input.addEventListener("change", saveTripToLocalStorage);
+            });
+            document.querySelectorAll(".day-checkbox").forEach(checkbox => {
+                checkbox.addEventListener("change", saveTripToLocalStorage);
+            });
+        }
         // 每次修改時觸發快取儲存
         document.querySelectorAll(".location, .day-checkbox").forEach(input => {
             input.addEventListener("change", saveTripToLocalStorage);
@@ -382,12 +398,14 @@
             if (savedTrip) {
                 const tripData = JSON.parse(savedTrip);
                 const daysDiv = document.getElementById("days");
+                daysDiv.innerHTML = ''; // 確保加載時清空現有內容
+
                 tripData.forEach((day, index) => {
                     const newDay = document.createElement("div");
                     newDay.className = "day-trip";
                     newDay.innerHTML = `
                         <div class="day-title">
-                            <input type="text" value="${day.title}">
+                            <input type="text" value="${day.title}" placeholder="Day ${index + 1}">
                             <input type="checkbox" class="day-checkbox" onchange="planRoute()">
                             <button onclick="addLocation(this)">Add Location</button>
                         </div>
@@ -408,6 +426,9 @@
                     `;
                     daysDiv.appendChild(newDay);
                 });
+
+                // 重新附加事件監聽器
+                attachSaveListeners();
             }
         }
     </script>
